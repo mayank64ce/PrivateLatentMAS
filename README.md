@@ -278,6 +278,26 @@ CUDA_VISIBLE_DEVICES=0,1 python run.py --method latent_mas --model_name Qwen/Qwe
 > We modify the partial inner package inside vLLM backend for our method implementation.
 > Note minor numeric differences may arise compared to offical HF backend due to different decoding (generation) strategies. Please Use the HF backend to reproduce the official published results.
 
+## 🦙 Using Llama Models
+
+All three methods (`baseline`, `text_mas`, `latent_mas`) accept Llama models in addition to Qwen3:
+
+```bash
+python run.py --method latent_mas --model_name meta-llama/Llama-3.2-3B-Instruct --task gsm8k --prompt sequential \
+  --max_samples -1 --max_new_tokens 2048 --latent_steps 5 --generate_bs 1
+```
+
+Supported names: `meta-llama/Llama-3.2-3B-Instruct` and `meta-llama/Llama-3.1-8B-Instruct`. Qwen models keep the original system prompt ("You are Qwen, created by Alibaba Cloud..."). All other models get the neutral system prompt "You are a helpful assistant."
+
+Before you run a Llama model, read these notes:
+
+- **Get access first.** Meta's Llama repositories are gated. Accept the license on the model's Hugging Face page, then log in with `hf auth login`.
+- **Do not use `--think`.** Llama has no `<think>` token. The flag adds the literal text `<think>` to the prompt.
+- **Keep `--latent_steps` low on Llama 3.2 3B.** In our tests, the Judger gave coherent output with up to 5 latent steps. At 10 steps, the output degraded into incoherent text. Qwen3-4B worked with 10 steps. Tune this value for each model.
+- **`--latent_space_realign` has no effect on models with tied embeddings.** Llama 3.2 1B/3B and Qwen3-4B use one shared matrix for the input embeddings and `lm_head` (`"tie_word_embeddings": true` in the model config). For these models, the realignment matrix is the identity (we measured ‖W − I‖/‖I‖ ≈ 1.6e-6 on Qwen3-4B), so only the norm rescaling applies. On models with separate weights, such as Llama 3.1 8B, the flag is a real hyperparameter.
+- **Use `--generate_bs 1` for LatentMAS.** The Llama and Qwen3 tokenizers pad on the right. In a batch, the latent loop starts from the last position of each padded prompt. For shorter prompts, that position is a pad token.
+- **The prompts were tuned on Qwen3.** Llama results are not comparable to the published numbers.
+
 ## 📚 Citation
 
 💫 If you find **LatentMAS** helpful, please kindly give us a star ⭐️ and cite below. Thanks!

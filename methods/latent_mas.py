@@ -354,16 +354,19 @@ class LatentMASMethod:
                 # Get current prompt embedding
                 curr_prompt_emb = self.model.embedding_layer(judger_encoded).squeeze(0).to(self.vllm_device)
                 
-                # assert Qwen model
-                assert "Qwen" in self.args.model_name or "qwen" in self.args.model_name, "latent_embedding_position is only supported for Qwen models currently."
-
-                # handle latent embedding insertion position    
+                # handle latent embedding insertion position: right before the user message content.
+                # Located via the content itself so it works with any chat template.
                 len_of_left = []
-                for p in judger_prompts:
-                    idx = p.find("<|im_start|>user\n")
-                    # Get the text up to and including "<|im_start|>user\n"
-                    left = p[: idx + len("<|im_start|>user\n")]
-                    len_of_left.append(len(self.model.tokenizer(left)['input_ids']))
+                for p, messages in zip(judger_prompts, batch_messages):
+                    user_content = messages[-1]["content"]
+                    idx = p.find(user_content)
+                    if idx < 0:
+                        # some templates (e.g. Llama) trim message content
+                        idx = p.find(user_content.strip())
+                    assert idx >= 0, "Could not locate the user message in the rendered judger prompt."
+                    left = p[:idx]
+                    # the chat template already contains any BOS token, so don't add special tokens again
+                    len_of_left.append(len(self.model.tokenizer(left, add_special_tokens=False)['input_ids']))
                     
                 B, L, H = curr_prompt_emb.shape
                 _, Lp, H = past_embedding.shape  # assume shape consistency

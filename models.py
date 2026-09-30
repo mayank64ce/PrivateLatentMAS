@@ -4,6 +4,9 @@ import torch
 import matplotlib.pyplot as plt
 from typing import Dict, List, Optional, Tuple
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import transformers
+
+_TRANSFORMERS_MAJOR = int(transformers.__version__.split(".")[0])
 
 try:
     from vllm import LLM, SamplingParams
@@ -21,7 +24,12 @@ def _ensure_pad_token(tokenizer: AutoTokenizer) -> None:
 
 
 def _past_length(past_key_values: Optional[Tuple]) -> int:
-    if not past_key_values:
+    if past_key_values is None:
+        return 0
+    # transformers Cache objects (e.g. DynamicCache) are not subscriptable in newer versions
+    if hasattr(past_key_values, "get_seq_length"):
+        return int(past_key_values.get_seq_length())
+    if len(past_key_values) == 0:
         return 0
     k = past_key_values[0][0]
     return k.shape[-2]
@@ -244,6 +252,8 @@ class ModelWrapper:
                     device=attention_mask.device,
                 )
                 attention_mask = torch.cat([past_mask, attention_mask], dim=-1)
+        # transformers>=5 derives cache positions itself and rejects an explicit `cache_position`
+        cache_kwargs = {"cache_position": cache_position} if _TRANSFORMERS_MAJOR < 5 else {}
         outputs = self.model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -255,7 +265,7 @@ class ModelWrapper:
             return_dict_in_generate=True,
             output_scores=False,
             past_key_values=past_key_values,
-            cache_position=cache_position,
+            **cache_kwargs,
         )
         sequences = outputs.sequences
         generations: List[str] = []
